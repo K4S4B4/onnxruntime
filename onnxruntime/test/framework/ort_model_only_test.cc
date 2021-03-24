@@ -16,8 +16,16 @@
 #include "test/util/include/asserts.h"
 #include "test/util/include/inference_session_wrapper.h"
 #include "core/flatbuffers/schema/ort.fbs.h"
+
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 6387)
+#endif
 #include "flatbuffers/idl.h"
 #include "flatbuffers/util.h"
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 #include "core/session/onnxruntime_cxx_api.h"
 

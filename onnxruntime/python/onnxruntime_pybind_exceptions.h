@@ -1,7 +1,17 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 28182)
+#pragma warning(disable : 28020)
+#pragma warning(disable : 6011)
+#endif
 #include <pybind11/pybind11.h>
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
+
 #include <stdexcept>
 #include "core/common/status.h"
 

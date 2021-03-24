@@ -2,8 +2,6 @@
 // Licensed under the MIT License.
 
 #include "test/providers/provider_test_utils.h"
-#include "onnx/shape_inference/implementation.h"
-#include "onnx/checker.h"
 #include "shape_inference_test_helper.h"
 
 namespace onnxruntime {

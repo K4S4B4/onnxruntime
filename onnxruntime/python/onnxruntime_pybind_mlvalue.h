@@ -4,9 +4,18 @@
 #pragma once
 #define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
 
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 28182)
+#pragma warning(disable : 28020)
+#pragma warning(disable : 6011)
+#endif
 #include <pybind11/iostream.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 #include "core/common/logging/logging.h"
 #include "core/common/logging/sinks/clog_sink.h"

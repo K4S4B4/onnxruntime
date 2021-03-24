@@ -28,6 +28,7 @@
 #pragma warning(disable : 4127)
 #pragma warning(disable : 4805)
 #pragma warning(disable : 6255)
+#pragma warning(disable : 6313)
 #endif
 #include "Eigen/src/Core/arch/Default/Half.h"
 #if defined(__GNUC__)
