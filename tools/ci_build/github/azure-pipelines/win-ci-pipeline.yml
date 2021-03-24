@@ -176,6 +176,14 @@ jobs:
       msBuildCommandline: '"C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\MSBuild\Current\Bin\amd64\msbuild.exe" "$(Build.BinariesDirectory)\Debug\onnxruntime.sln" /p:platform=x64 /p:configuration="Debug" /p:CAExcludePath="$(Build.BinariesDirectory);$(Build.SourcesDirectory)\cmake;C:\program files (x86)" /p:VisualStudioVersion="16.0" /m /p:PreferredToolArchitecture=x64'
     continueOnError: true 
 
+
+  - task: PostAnalysis@2
+    displayName: 'Post Analysis'
+    inputs:
+      GdnBreakAllTools: false
+      GdnBreakGdnToolSDLNativeRules: true
+      GdnBreakGdnToolSDLNativeRulesSeverity: Warning
+
   - task: PublishTestResults@2
     displayName: 'Publish unit test results'
     inputs:
