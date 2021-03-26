@@ -48,6 +48,7 @@
 #pragma warning(disable : 4127)
 #pragma warning(disable : 6255)
 #pragma warning(disable : 6294)
+#pragma warning(disable : 6313)
 #endif
 #include "Eigen/Core"
 #include "Eigen/Dense"
