@@ -13,6 +13,50 @@ namespace training {
 
 using namespace onnxruntime::common;
 
+namespace {
+  Status SetEvalFeeds(std::shared_ptr<onnxruntime::Model> model, const std::unordered_set<std::string>& nodes_needing_eval_feeds, const std::string& eval_feed_name)
+  {
+    auto& graph = model->MainGraph();
+    GraphAugmenter::GraphDefs defs{};
+    bool is_training_mode_added_initializer = false;
+    bool is_training_mode_added_input = false;
+
+    // Update inference graph to add training_mode as input to some of the ops
+    for (auto& node : graph.Nodes())
+    {
+      if (nodes_needing_eval_feeds.count(node.OpType()) && node.InputArgCount().size() > 2)
+      {
+        auto& mode_input = node.MutableInputDefs()[2];
+        const ONNX_NAMESPACE::TensorProto* mode_initializer = nullptr;
+        if (!graph.GetInitializedTensor(eval_feed_name, mode_initializer)) {
+          // training_mode initializer has not been added before, add it here.
+          // Ideally we want only 1 training_mode initializer to control all relevant nodes.
+          const ONNX_NAMESPACE::TensorProto* original_mode_initializer = nullptr;
+          ORT_ENFORCE(graph.GetInitializedTensor(mode_input->Name(), original_mode_initializer) == true,
+                      node.OpType() + "'s input: " + mode_input->Name() + " must be an initializer.");
+          ONNX_NAMESPACE::TensorProto new_mode_initializer(*original_mode_initializer);
+          new_mode_initializer.set_name(eval_feed_name);
+          if (!is_training_mode_added_initializer) {
+            defs.AddInitializers({new_mode_initializer});
+            is_training_mode_added_initializer = true;
+          }
+        }
+        mode_input = &graph.GetOrCreateNodeArg(eval_feed_name, mode_input->TypeAsProto());
+        // Set training_mode as graph input if any node that needs eval feed is found,
+        // it's okay to add it multiple times since it will be de-dup'ed downstream.
+        if (!is_training_mode_added_input) {
+          defs.AddGraphInputs({eval_feed_name});
+          is_training_mode_added_input = true;
+        }
+      }
+    }
+
+    ORT_RETURN_IF_ERROR(GraphAugmenter::AugmentGraph(graph, defs));
+
+    return Status::OK();
+  }
+}
+
 Status ModuleGradientGraphBuilder::Initialize(std::istream& model_istream,
                                               const ModuleGradientGraphBuilderConfiguration& config) {
   // Save the model and config.
@@ -70,7 +114,7 @@ Status ModuleGradientGraphBuilder::Initialize(std::istream& model_istream,
 Status ModuleGradientGraphBuilder::Build(const std::vector<std::vector<int64_t>>* input_shapes_ptr) {
   // Make a copy of the original model.
   auto model_proto = model_->ToProto();
-  ORT_RETURN_IF_ERROR(Model::Load(model_proto, gradient_model_, nullptr, *logger_));
+  ORT_RETURN_IF_ERROR(Model::Load(model_proto, inference_model_, nullptr, *logger_));
 
   // Replace the user input shapes if input_shapes_ptr is not null_ptr.
   if (input_shapes_ptr) {
@@ -98,14 +142,23 @@ std::string ModuleGradientGraphBuilder::GetGradientModel() const {
   return model_str;
 }
 
+std::string ModuleGradientGraphBuilder::GetInferenceModel() const {
+  std::string model_str;
+  if (!inference_model_->ToProto().SerializeToString(&model_str)) {
+    ORT_THROW("Fail to serialize inference model to string.");
+  }
+
+  return model_str;
+}
+
 void ModuleGradientGraphBuilder::SetConcreteInputShapes(const std::vector<std::vector<int64_t>>& input_shapes) {
   ORT_ENFORCE(input_shapes.size() == training_graph_info_.user_input_names.size(),
               "The size of concrete input shapes and the size of user inputs does not match.");
-  Graph& gradient_graph = gradient_model_->MainGraph();
+  Graph& inference_graph = inference_model_->MainGraph();
   std::vector<const NodeArg*> input_args;
   size_t input_index = 0;
   for (const auto& input_name : training_graph_info_.user_input_names) {
-    NodeArg* input_node_arg = gradient_graph.GetNodeArg(input_name);
+    NodeArg* input_node_arg = inference_graph.GetNodeArg(input_name);
     ONNX_NAMESPACE::TensorShapeProto new_shape;
     for (size_t i = 0; i < input_shapes[input_index].size(); i++) {
       new_shape.add_dim()->set_dim_value(input_shapes[input_index][i]);
@@ -117,18 +170,18 @@ void ModuleGradientGraphBuilder::SetConcreteInputShapes(const std::vector<std::v
   }
 
   // Move over all training initializer inputs. They already have the concrete shapes.
-  const std::vector<const NodeArg*>& graph_inputs = gradient_graph.GetInputsIncludingInitializers();
+  const std::vector<const NodeArg*>& graph_inputs = inference_graph.GetInputsIncludingInitializers();
   for (; input_index < graph_inputs.size(); input_index++) {
     input_args.emplace_back(graph_inputs[input_index]);
   }
 
-  gradient_graph.SetInputs(input_args);
+  inference_graph.SetInputs(input_args);
 }
 
 Status ModuleGradientGraphBuilder::BuildGradientGraph() {
   // Resolve original graph, register and apply transformers for pre-training.
-  Graph& gradient_graph = gradient_model_->MainGraph();
-  ORT_RETURN_IF_ERROR(gradient_graph.Resolve());
+  Graph& inference_graph = inference_model_->MainGraph();
+  ORT_RETURN_IF_ERROR(inference_graph.Resolve());
 
   const TrainingSession::TrainingConfiguration::GraphTransformerConfiguration graph_transformer_config{};
   GraphTransformerManager graph_transformation_mgr{2};
@@ -156,8 +209,17 @@ Status ModuleGradientGraphBuilder::BuildGradientGraph() {
 
   for (int i = static_cast<int>(TransformerLevel::Level1); i <= static_cast<int>(TransformerLevel::MaxLevel); i++) {
     ORT_RETURN_IF_ERROR(
-        graph_transformation_mgr.ApplyTransformers(gradient_graph, static_cast<TransformerLevel>(i), *logger_));
+        graph_transformation_mgr.ApplyTransformers(inference_graph, static_cast<TransformerLevel>(i), *logger_));
   }
+
+  // Make a copy of the inference model.
+  auto model_proto = inference_model_->ToProto();
+  ORT_RETURN_IF_ERROR(Model::Load(model_proto, gradient_model_, nullptr, *logger_));
+
+  Graph& gradient_graph = gradient_model_->MainGraph();
+  ORT_RETURN_IF_ERROR(gradient_graph.Resolve());
+
+  SetEvalFeeds(inference_model_, {"Dropout"}, "training_mode");
 
   // Build gradient graph.
   GradientGraphConfiguration gradient_graph_config{};

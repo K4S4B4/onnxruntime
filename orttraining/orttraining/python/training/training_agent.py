@@ -14,7 +14,7 @@ class TrainingAgent(object):
     This is the main class used to run a ORTModule model.
     """
 
-    def __init__(self, path_or_bytes, session_options=None, providers=None, provider_options=None):
+    def __init__(self, path_or_bytes, session_options=None, providers=None, provider_options=None, is_training=True):
         """
         :param path_or_bytes: filename or serialized ONNX or ORT format model in a byte string
         :param sess_options: session options
@@ -43,6 +43,7 @@ class TrainingAgent(object):
 
         self._training_agent = None
         self._inference_session = None
+        self._is_training = is_training
 
         self.create_training_agent(path_or_bytes, session_options, providers, provider_options)
 
@@ -50,7 +51,8 @@ class TrainingAgent(object):
     def create_training_agent(self, path_or_bytes, session_options, providers, provider_options):
         self._inference_session = onnxruntime.InferenceSession(path_or_bytes, session_options,
                                                                providers, provider_options)
-        self._training_agent = C_TrainingAgent(self._inference_session._sess)
+        if self._is_training:
+            self._training_agent = C_TrainingAgent(self._inference_session._sess)
 
     def io_binding(self):
         "Return an onnxruntime.IOBinding object`."
@@ -62,12 +64,22 @@ class TrainingAgent(object):
          :param iobinding: the iobinding object that has graph inputs/outputs bind.
          :param run_options: See :class:`onnxruntime.RunOptions`.
         """
-        ortvalues, run_id = self._training_agent.run_forward(iobinding._iobinding, run_options)
-        return [OrtValue(ortvalue) for ortvalue in ortvalues], run_id
+        ortvalues = None
+        run_id = None
+        if self._is_training:
+            ortvalues, run_id = self._training_agent.run_forward(iobinding._iobinding, run_options)
+            ortvalues = [OrtValue(ortvalue) for ortvalue in ortvalues]
+        else:
+            self._inference_session.run_with_iobinding(iobinding, run_options)
+            ortvalues = iobinding.get_outputs()
+        return ortvalues, run_id
 
     def run_backward(self, backward_output_grads, run_id):
         """
          Resume executing the backward subgraph starting from Yield Op.
          :param backward_output_grads: Output gradients for backward.
         """
+        if run_id is None:
+            raise RuntimeError("Backward cannot be executed for non training forward executions")
+
         self._training_agent.run_backward([ortvalue._ortvalue for ortvalue in backward_output_grads], run_id)

@@ -77,6 +77,12 @@ class ModuleGradientGraphBuilder {
   std::string GetGradientModel() const;
 
   /**
+   * Get inference model.
+   * @return The inference model serialized to string.
+   */
+  std::string GetInferenceModel() const;
+
+  /**
    * Get the training graphs information.
    * @return The training graphs information.
    */
@@ -96,6 +102,7 @@ class ModuleGradientGraphBuilder {
   void ReorderOutputs();
 
   std::shared_ptr<onnxruntime::Model> model_;
+  std::shared_ptr<onnxruntime::Model> inference_model_;
   std::shared_ptr<onnxruntime::Model> gradient_model_;
   TrainingGraphInfo training_graph_info_;
 

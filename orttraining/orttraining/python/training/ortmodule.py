@@ -49,9 +49,14 @@ class Verbosity(IntEnum):
     ERROR = 3
     FATAL = 4
 
-def _create_iobinding(io_binding, inputs, model, device):
+def _create_iobinding(io_binding, inputs, model, device, training_mode):
     '''Creates IO binding for a `model` inputs and output'''
     for idx, value_info in enumerate(model.graph.input):
+        if value_info.name == "training_mode":
+            io_binding.bind_ortvalue_input(
+                value_info.name,
+                _ortvalue_from_torch_tensor(torch.tensor(training_mode, device=device)))
+            continue
         io_binding.bind_ortvalue_input(
             value_info.name, _ortvalue_from_torch_tensor(inputs[idx]))
 
@@ -108,8 +113,11 @@ class ORTModule(torch.nn.Module):
             # TODO: using pytorch for evaluation for now. We will use ORT for evaluation later.
             # TODO: If the model is being executed with the gradient disabled (inside torch.no_grad() context for example),
             # leverage pytorch model for now.
-            if not self._is_training():
-                return self._original_module(*inputs, **kwargs)
+            # if not self._is_training():
+            #     return self._original_module(*inputs, **kwargs)
+
+            # is_train_mode = self._flattened_output_module.training
+            # self.train()
 
             # Exporting module to ONNX for the first time
             if not self._onnx_training:
@@ -127,7 +135,7 @@ class ORTModule(torch.nn.Module):
             build_gradient_graph = self._current_input_shape is None
             _, _, input_names_require_grad, new_input_shape = \
                 _ortmodule_io.parse_inputs_for_onnx_export(
-                    self._original_module_parameters, self._onnx_inference, *inputs, **kwargs)
+                    self._original_module_parameters, self._onnx_model, *inputs, **kwargs)
             initializer_names_to_train_set_user_model = {name for name, param in
                 self._flattened_output_module.named_parameters() if param.requires_grad}
             initializer_names_to_train_set_onnx_graph = set(self._onnx_graphs_info.initializer_names_to_train) \
@@ -144,13 +152,19 @@ class ORTModule(torch.nn.Module):
             if build_gradient_graph:
                 self._current_input_shape = new_input_shape
                 self._build_training_graph()
-                self._create_training_session()
+                self._create_execution_session()
 
             module_device = _utils.get_device_from_module(
                 self._original_module)
             if self._device != module_device:
                 self._device = module_device
-                self._create_training_session()
+                self._create_execution_session()
+
+            if self._is_training() and self._inference_session:
+                self._onnx_inference = None
+                self._inference_session = None
+            elif not self._is_training() and not self._inference_session:
+                self._create_inference_session()
 
             class _ORTModuleFunction(torch.autograd.Function):
                 '''Use a custom torch.autograd.Function to associate self.backward_graph as the
@@ -173,21 +187,25 @@ class ORTModule(torch.nn.Module):
 
                     # TODO: Try to reuse the output buffers as some of the output tensors are same sizes,
                     #   especially the backward graph outputs.
-                    training_io_binding = self._training_session.io_binding()
+                    execution_session = self._inference_session if self._inference_session else self._training_session
+                    io_binding = execution_session.io_binding()
                     run_options = C.RunOptions()
-                    
+                    run_options.training_mode = self._inference_session is None
+
                     # Use IO binding
-                    _create_iobinding(training_io_binding, inputs, self._onnx_training, self._device)
+                    _create_iobinding(io_binding, inputs,
+                        self._onnx_inference if self._onnx_inference else self._onnx_training,
+                        self._device, self._inference_session is None)
 
                     # Run and return module outputs.
-                    forward_outputs, run_id = self._training_session.run_forward(training_io_binding, run_options)
+                    forward_outputs, run_id = execution_session.run_forward(io_binding, run_options)
                     user_outputs = tuple(_ortvalue_to_torch_tensor(
                         forward_output) for forward_output in forward_outputs)
                     # Disable materializing grads then None object will not be converted to a tensor filled with zeros prior to calling backward.
                     # Also save shape, device and type info to ctx for materializing tensor in backward if output grad is None.
                     ctx.set_materialize_grads(False)
                     output_info = [(output.shape, output.device, output.dtype) for output in user_outputs]
-                    ctx.run_info = onnxruntime.training.RunStateInfo(run_id, run_options, training_io_binding, output_info)
+                    ctx.run_info = onnxruntime.training.RunStateInfo(run_id, run_options, io_binding, output_info)
 
                     # Assert that the outputs and model device match
                     _check_same_device(
@@ -204,6 +222,9 @@ class ORTModule(torch.nn.Module):
                     # Assert that the grad_outputs and model device match
                     _check_same_device(
                         self._device, "Input argument to backward", *grad_outputs)
+
+                    if self._inference_session:
+                        raise RuntimeError("Backward cannot be executed in eval mode")
 
                     # Use IO binding
                     # Push user output grads to ONNX backend.
@@ -306,7 +327,7 @@ class ORTModule(torch.nn.Module):
                 raise NotImplementedError(
                     "The model's forward method has **kwargs parameter which is currently not supported.")
 
-        self._onnx_inference = None
+        self._onnx_model = None
 
         # Related to training graph shape inference
         self._current_input_shape = None
@@ -322,8 +343,9 @@ class ORTModule(torch.nn.Module):
         self._onnx_training = None
         self._training_session = None
 
-        # Log level
-        self._loglevel = getattr(logging, 'WARNING')
+        # Inference model
+        self._onnx_inference = None
+        self._inference_session = None
 
         # Debug flags
         self._save_onnx = False
@@ -350,12 +372,10 @@ class ORTModule(torch.nn.Module):
         # TODO: PyTorch exporter bug: changes the initializer order in ONNX model
         initializer_names = [name
                              for name, _ in self._flattened_output_module.named_parameters()]
-        initializer_names_to_train = []
-        if self._is_training():
-            initializer_names_to_train = [name
-                for name, param in self._flattened_output_module.named_parameters() if param.requires_grad]
+        initializer_names_to_train = [name
+            for name, param in self._flattened_output_module.named_parameters() if param.requires_grad]
         onnx_initializer_names = {
-            p.name for p in self._onnx_inference.graph.initializer}
+            p.name for p in self._onnx_model.graph.initializer}
         initializer_names_to_train = [
             p for p in initializer_names_to_train if p in onnx_initializer_names]
 
@@ -366,18 +386,18 @@ class ORTModule(torch.nn.Module):
         grad_builder_config.input_names_require_grad = self._input_names_require_grad
         self._module_gradient_graph_builder = C.ModuleGradientGraphBuilder()
         self._module_gradient_graph_builder.initialize(
-            self._onnx_inference.SerializeToString(), grad_builder_config)
+            self._onnx_model.SerializeToString(), grad_builder_config)
 
     def _get_inference_graph_and_init_gradient_graph_builder(self, *inputs, **kwargs):
-        self._onnx_inference = self._get_inference_graph(*inputs, **kwargs)
+        self._onnx_model = self._get_inference_graph(*inputs, **kwargs)
 
         if self._save_onnx:
-            onnx.save(self._onnx_inference,
-                      self._save_onnx_prefix + '_inference.onnx')
+            onnx.save(self._onnx_model,
+                      self._save_onnx_prefix + '_model.onnx')
 
         self._initialize_module_gradient_graph_builder()
 
-    def _create_training_session(self):
+    def _get_session_config(self):
         providers = None
         provider_options = None
         if self._device.type == 'cuda':
@@ -402,10 +422,30 @@ class ORTModule(torch.nn.Module):
         # 0:Verbose, 1:Info, 2:Warning. 3:Error, 4:Fatal. Default is 2.
         session_options.log_severity_level = int(self._verbosity)
 
+        return session_options, providers, provider_options
+
+    def _create_training_session(self, session_options, providers, provider_options):
         self._training_session = onnxruntime.training.TrainingAgent(self._onnx_training.SerializeToString(),
                                                                     session_options, providers, provider_options)
 
-    def _build_training_graph(self, *inputs, **kwargs):
+    def _create_inference_session(self, session_options, providers, provider_options):
+        self._onnx_inference = onnx.load_model_from_string(self._module_gradient_graph_builder.get_inference_model())
+        self._inference_session = onnxruntime.training.TrainingAgent(
+            self._onnx_inference.SerializeToString(),
+            session_options, providers, provider_options, False)
+
+        if self._save_onnx:
+            onnx.save(self._onnx_inference,
+                      self._save_onnx_prefix + '_inference.onnx')
+
+    def _create_execution_session(self):
+        session_options, providers, provider_options = self._get_session_config()
+        self._create_training_session(session_options, providers, provider_options)
+
+        if not self._is_training():
+            self._create_inference_session(session_options, providers, provider_options)
+
+    def _build_training_graph(self):
         if self._use_static_shape:
             self._module_gradient_graph_builder.build(
                 self._current_input_shape)

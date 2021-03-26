@@ -540,6 +540,10 @@ py::class_<TrainingAgent>(m, "TrainingAgent", R"pbdoc(This is the main class use
            [](ModuleGradientGraphBuilder* module_gradient_graph_builder) {
              return py::bytes(module_gradient_graph_builder->GetGradientModel());
            })
+      .def("get_inference_model",
+           [](ModuleGradientGraphBuilder* module_gradient_graph_builder) {
+             return py::bytes(module_gradient_graph_builder->GetInferenceModel());
+           })
       .def("get_training_graph_info", [](ModuleGradientGraphBuilder* module_gradient_graph_builder) {
         return module_gradient_graph_builder->GetTrainingGraphInfo();
       });

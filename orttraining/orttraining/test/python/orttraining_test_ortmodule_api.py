@@ -1506,3 +1506,77 @@ def test_model_initializer_requires_grad_changes_from_one_forward_to_next():
     assert training_session1 != training_session2
     assert torch.equal(weight_grad_2, weight_grad_3)
     assert torch.equal(bias_grad_2, bias_grad_3)
+
+def test_eval_with_dropout():
+    class NeuralNetDropout(torch.nn.Module):
+        def __init__(self, input_size, hidden_size, num_classes):
+            super(NeuralNetDropout, self).__init__()
+
+            self.fc1 = torch.nn.Linear(input_size, hidden_size)
+            self.relu = torch.nn.ReLU()
+            self.fc2 = torch.nn.Linear(hidden_size, num_classes)
+            self.dropout = torch.nn.Dropout()
+
+        def forward(self, input1):
+            out = self.fc1(input1)
+            out = self.relu(out)
+            out = self.fc2(out)
+            out = self.dropout(out)
+            return out
+
+    device = 'cuda'
+
+    N, D_in, H, D_out = 64, 784, 500, 10
+    model = NeuralNetDropout(D_in, H, D_out).to(device)
+    model.eval()
+    ort_model = ORTModule(copy.deepcopy(model))
+    ort_model.eval()
+    ort_model._save_onnx = True
+    ort_model._save_onnx_prefix = 'eval_mode_test'
+
+    x = torch.randn(N, D_in, device=device)
+    y = x.clone()
+
+    # Make sure model runs without any exception
+    output = ort_model(x)
+    output_pt = model(y)
+
+    assert output is not None
+    assert torch.equal(output, output_pt)
+
+def test_eval_with_batchnorm():
+    class NeuralNetBatchnorm(torch.nn.Module):
+        def __init__(self, input_size, hidden_size, num_classes):
+            super(NeuralNetBatchnorm, self).__init__()
+
+            self.fc1 = torch.nn.Linear(input_size, hidden_size)
+            self.batchnorm = torch.nn.BatchNorm1d(hidden_size)
+            self.relu = torch.nn.ReLU()
+            self.fc2 = torch.nn.Linear(hidden_size, num_classes)
+
+        def forward(self, input1):
+            out = self.fc1(input1)
+            out = self.batchnorm(out)
+            out = self.relu(out)
+            out = self.fc2(out)
+            return out
+
+    device = 'cuda'
+
+    N, D_in, H, D_out = 64, 784, 500, 10
+    model = NeuralNetBatchnorm(D_in, H, D_out).to(device)
+    # model.eval()
+    ort_model = ORTModule(copy.deepcopy(model))
+    # ort_model.eval()
+    ort_model._save_onnx = True
+    ort_model._save_onnx_prefix = 'eval_mode_test'
+
+    x = torch.randn(N, D_in, device=device)
+    y = x.clone()
+
+    # Make sure model runs without any exception
+    output = ort_model(x)
+    output_pt = model(y)
+
+    assert output is not None
+    assert torch.equal(output, output_pt)
