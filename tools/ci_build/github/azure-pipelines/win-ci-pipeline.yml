@@ -126,6 +126,11 @@ jobs:
     continueOnError: true 
 
 
+  - task: SdtReport@1
+    displayName: 'Create Security Analysis Report'
+    inputs:
+      SDLNativeRules: true
+
   - task: PublishSecurityAnalysisLogs@3
     displayName: 'Publish Security Analysis Logs'
     inputs:
