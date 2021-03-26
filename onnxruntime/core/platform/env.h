@@ -48,6 +48,7 @@ using FileOffsetType = off_t;
 
 class EnvThread {
  public:
+  virtual void OnCancel() = 0;
   virtual ~EnvThread() = default;
 };
 

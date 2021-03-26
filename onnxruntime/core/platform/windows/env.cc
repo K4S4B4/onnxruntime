@@ -64,6 +64,13 @@ class WindowsThread : public EnvThread {
     FAIL_FAST_LAST_ERROR_IF(waitStatus == WAIT_FAILED);
   }
 
+  // This function is called when the threadpool is cancelled.
+  // TODO: Find a way to avoid calling TerminateThread
+  void OnCancel() {
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+    TerminateThread(hThread.get(), 1);
+#endif
+  }
 
  private:
   typedef HRESULT(WINAPI* SetThreadDescriptionFunc)(HANDLE hThread, PCWSTR lpThreadDescription);
@@ -75,11 +82,9 @@ class WindowsThread : public EnvThread {
 #if WINVER >= _WIN32_WINNT_WIN10
     constexpr SetThreadDescriptionFunc pSetThrDesc = SetThreadDescription;
 #elif WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
-    HMODULE kernelModule = GetModuleHandle(TEXT("kernel32.dll"));
     // kernel32.dll is always loaded
-    assert(kernelModule != nullptr);
     auto pSetThrDesc =
-        (SetThreadDescriptionFunc)GetProcAddress(kernelModule, "SetThreadDescription");
+        (SetThreadDescriptionFunc)GetProcAddress(GetModuleHandle(TEXT("kernel32.dll")), "SetThreadDescription");
 #else
     constexpr SetThreadDescriptionFunc pSetThrDesc = nullptr;
 #endif
