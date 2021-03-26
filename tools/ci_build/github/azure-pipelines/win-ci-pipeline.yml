@@ -126,7 +126,7 @@ jobs:
     continueOnError: true 
 
 
-  - task: SdtReport@1
+  - task: SdtReport@2
     displayName: 'Create Security Analysis Report'
     inputs:
       SDLNativeRules: true
@@ -134,7 +134,7 @@ jobs:
   - task: PublishSecurityAnalysisLogs@3
     displayName: 'Publish Security Analysis Logs'
     inputs:
-      ArtifactName: CodeAnalysisLogs1
+      ArtifactName: CodeAnalysisLogs
 
   - task: PostAnalysis@2
     displayName: 'Post Analysis'
