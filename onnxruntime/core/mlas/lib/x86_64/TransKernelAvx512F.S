@@ -43,7 +43,8 @@ Return Value:
 
 --*/
 
-        FUNCTION_ENTRY MlasComputeExpF32KernelAvx512F
+        .globl  C_UNDERSCORE(MlasComputeExpF32KernelAvx512F)
+C_UNDERSCORE(MlasComputeExpF32KernelAvx512F):
 
         lea     rax,C_UNDERSCORE(MlasExpConstants)[rip]
         vbroadcastss zmm21,.LExpConstants_LowerRange[rax]
@@ -132,7 +133,8 @@ Return Value:
 
 --*/
 
-        FUNCTION_ENTRY MlasComputeSumExpF32KernelAvx512F
+        .globl  C_UNDERSCORE(MlasComputeSumExpF32KernelAvx512F)
+C_UNDERSCORE(MlasComputeSumExpF32KernelAvx512F):
 
         lea     rax,C_UNDERSCORE(MlasExpConstants)[rip]
         vbroadcastss zmm21,.LExpConstants_LowerRange[rax]

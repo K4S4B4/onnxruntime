@@ -43,7 +43,8 @@ Return Value:
 
 --*/
 
-        FUNCTION_ENTRY MlasComputeExpF32KernelFma3
+        .globl  C_UNDERSCORE(MlasComputeExpF32KernelFma3)
+C_UNDERSCORE(MlasComputeExpF32KernelFma3):
 
         lea     rax,C_UNDERSCORE(MlasExpConstants)[rip]
         vbroadcastss ymm4,.LExpConstants_LowerRange[rax]
@@ -154,7 +155,8 @@ Return Value:
 
 --*/
 
-        FUNCTION_ENTRY MlasComputeSumExpF32KernelFma3
+        .globl  C_UNDERSCORE(MlasComputeSumExpF32KernelFma3)
+C_UNDERSCORE(MlasComputeSumExpF32KernelFma3):
 
         lea     rax,C_UNDERSCORE(MlasExpConstants)[rip]
         vbroadcastss ymm9,DWORD PTR [rcx]       # broadcast negative maximum value

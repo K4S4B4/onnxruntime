@@ -55,4 +55,3 @@ steps:
   inputs:
     tsaVersion: TsaV2
     codeBaseName: 'onnxruntime_master'
-  continueOnError: true

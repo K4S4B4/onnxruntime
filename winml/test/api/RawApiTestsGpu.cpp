@@ -101,7 +101,7 @@ ml::learning_model_device CreateDevice(DeviceType deviceType)
 }
 
 static void RawApiTestsGpuApiTestsClassSetup() {
-  WINML_EXPECT_HRESULT_SUCCEEDED(RoInitialize(RO_INIT_TYPE::RO_INIT_SINGLETHREADED));
+  RoInitialize(RO_INIT_TYPE::RO_INIT_SINGLETHREADED);
 }
 
 static void CreateDirectXDevice() {

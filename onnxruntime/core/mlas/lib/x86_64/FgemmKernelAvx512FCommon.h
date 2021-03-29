@@ -453,7 +453,8 @@ Return Value:
 
 --*/
 
-        FUNCTION_ENTRY \FunctionName\()
+        .globl  \FunctionName\()
+\FunctionName\():
 
         push    rbp
         push    rbx

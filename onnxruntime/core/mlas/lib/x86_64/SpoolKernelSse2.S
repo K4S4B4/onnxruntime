@@ -275,7 +275,8 @@ Return Value:
 
 --*/
 
-        FUNCTION_ENTRY MlasPool\PoolingType\()FloatKernel\Isa\()
+        .globl  C_UNDERSCORE(MlasPool\PoolingType\()FloatKernel\Isa\())
+C_UNDERSCORE(MlasPool\PoolingType\()FloatKernel\Isa\()):
 
         SpoolKernelEntry \PoolingType\()
 

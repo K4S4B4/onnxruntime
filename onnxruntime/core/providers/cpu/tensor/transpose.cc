@@ -3,7 +3,6 @@
 
 #include "core/providers/cpu/tensor/transpose.h"
 
-#include "core/framework/element_type_lists.h"
 #include "core/framework/utils.h"
 #include "core/mlas/inc/mlas.h"
 #include "core/providers/op_kernel_type_control.h"
@@ -14,9 +13,9 @@ namespace onnxruntime {
 
 namespace op_kernel_type_control {
 // we're using one set of types for all opsets
-ORT_SPECIFY_OP_KERNEL_ARG_DEFAULT_TYPE_LIST_ALL_OPSETS(
+ORT_SPECIFY_OP_KERNEL_ARG_DEFAULT_TYPES_ALL_OPSETS(
     kCpuExecutionProvider, kOnnxDomain, Transpose, Input, 0,
-    element_type_lists::All);
+    ORT_OP_KERNEL_TYPE_CTRL_ALL_TENSOR_DATA_TYPES);
 }  // namespace op_kernel_type_control
 
 namespace {
@@ -341,23 +340,11 @@ We use memcpy if the block size is larger.
 We fall back to the default implementation in all other cases, and if the input is std::string.
 */
 
-namespace {
-
-template <typename T>
-struct has_mlas_transpose : std::false_type {};
-
-template <>
-struct has_mlas_transpose<uint8_t> : std::true_type {};
-
-template <>
-struct has_mlas_transpose<uint32_t> : std::true_type {};
-
 // moving a single axis outwards where the read/write size is a power of 2 and between 8 and 64 bits.
 template <typename T>
-typename std::enable_if<!has_mlas_transpose<T>::value, void>::type
-SimpleTransposeSingleAxisOutwards(const T* input_data, T* output_data,
-                                  int64_t num_loops, int64_t num_writers,
-                                  int64_t writes_per_loop, int64_t writes_per_writer_per_loop) {
+static void SimpleTransposeSingleAxisOutwards(const T* input_data, T* output_data,
+                                              int64_t num_loops, int64_t num_writers,
+                                              int64_t writes_per_loop, int64_t writes_per_writer_per_loop) {
   const T* end;
   for (int64_t l = 0; l < num_loops; ++l) {
     T* output_for_first_writer = output_data;
@@ -380,11 +367,9 @@ SimpleTransposeSingleAxisOutwards(const T* input_data, T* output_data,
   }
 }
 
-template <typename T>
-typename std::enable_if<has_mlas_transpose<T>::value, void>::type
-SimpleTransposeSingleAxisOutwards(const T* input_data, T* output_data,
-                                  int64_t num_loops, int64_t num_writers,
-                                  int64_t writes_per_loop, int64_t writes_per_writer_per_loop) {
+static void SimpleTransposeSingleAxisOutwards(const uint8_t* input_data, uint8_t* output_data,
+                                              int64_t num_loops, int64_t num_writers,
+                                              int64_t writes_per_loop, int64_t writes_per_writer_per_loop) {
   for (int64_t l = 0; l < num_loops; ++l) {
     MlasTranspose(input_data,
                   output_data,
@@ -396,8 +381,8 @@ SimpleTransposeSingleAxisOutwards(const T* input_data, T* output_data,
 }
 
 //  `input_shape_override` overrides the shape of `input` for compute purposes.
-void TransposeSingleAxisOutwards(const std::vector<size_t>& permutations, const Tensor& input, Tensor& output,
-                                 int64_t from, int64_t to, const TensorShape* input_shape_override = nullptr) {
+static void TransposeSingleAxisOutwards(const std::vector<size_t>& permutations, const Tensor& input, Tensor& output,
+                                        int64_t from, int64_t to, const TensorShape* input_shape_override = nullptr) {
   ORT_UNUSED_PARAMETER(permutations);
 
   const auto& input_shape = input_shape_override ? *input_shape_override : input.Shape();
@@ -464,10 +449,9 @@ void TransposeSingleAxisOutwards(const std::vector<size_t>& permutations, const 
 }
 
 template <typename T>
-typename std::enable_if<!has_mlas_transpose<T>::value, void>::type
-SimpleTransposeSingleAxisInwards(const T* input_data, T* output_data,
-                                 int64_t num_loops, int64_t num_readers,
-                                 int64_t reads_per_loop, int64_t reads_per_reader_per_loop) {
+static void SimpleTransposeSingleAxisInwards(const T* input_data, T* output_data,
+                                             int64_t num_loops, int64_t num_readers,
+                                             int64_t reads_per_loop, int64_t reads_per_reader_per_loop) {
   T* end;
   for (int64_t l = 0; l < num_loops; ++l) {
     const T* input_for_first_reader = input_data;
@@ -489,11 +473,9 @@ SimpleTransposeSingleAxisInwards(const T* input_data, T* output_data,
   }
 }
 
-template <typename T>
-typename std::enable_if<has_mlas_transpose<T>::value, void>::type
-SimpleTransposeSingleAxisInwards(const T* input_data, T* output_data,
-                                 int64_t num_loops, int64_t num_readers,
-                                 int64_t reads_per_loop, int64_t reads_per_reader_per_loop) {
+static void SimpleTransposeSingleAxisInwards(const uint8_t* input_data, uint8_t* output_data,
+                                             int64_t num_loops, int64_t num_readers,
+                                             int64_t reads_per_loop, int64_t reads_per_reader_per_loop) {
   for (int64_t l = 0; l < num_loops; ++l) {
     MlasTranspose(input_data,
                   output_data,
@@ -506,8 +488,8 @@ SimpleTransposeSingleAxisInwards(const T* input_data, T* output_data,
 
 // moving a single axis inwards where the read/write size is a power of 2 and between 8 and 64 bits.
 //  `input_shape_override` overrides the shape of `input` for compute purposes.
-void TransposeSingleAxisInwards(const std::vector<size_t>& permutations, const Tensor& input, Tensor& output,
-                                int64_t from, int64_t to, const TensorShape* input_shape_override = nullptr) {
+static void TransposeSingleAxisInwards(const std::vector<size_t>& permutations, const Tensor& input, Tensor& output,
+                                       int64_t from, int64_t to, const TensorShape* input_shape_override = nullptr) {
   ORT_UNUSED_PARAMETER(permutations);
 
   const auto& input_shape = input_shape_override ? *input_shape_override : input.Shape();
@@ -575,8 +557,8 @@ void TransposeSingleAxisInwards(const std::vector<size_t>& permutations, const T
 }
 
 //  `input_shape_override` overrides the shape of `input` for compute purposes.
-void SingleAxisTranspose(const std::vector<size_t>& permutations, const Tensor& input, Tensor& output,
-                         size_t from, size_t to, const TensorShape* input_shape_override = nullptr) {
+static void SingleAxisTranspose(const std::vector<size_t>& permutations, const Tensor& input, Tensor& output,
+                                size_t from, size_t to, const TensorShape* input_shape_override = nullptr) {
   if (from > to) {
     TransposeSingleAxisOutwards(permutations, input, output, from, to, input_shape_override);
   } else {
@@ -584,7 +566,7 @@ void SingleAxisTranspose(const std::vector<size_t>& permutations, const Tensor& 
   }
 }
 
-bool IsMovingSingleAxis(const std::vector<size_t>& permutations, size_t& from, size_t& to) {
+static bool IsMovingSingleAxis(const std::vector<size_t>& permutations, size_t& from, size_t& to) {
   // if a single axis moved to an outer dimension, the values should be one lower than the index until the slot the
   // axis was moved from, and equal to the index after that.
   // e.g. axis 3 moves out to 1 would be: 0, 3, 1, 2, 4
@@ -652,8 +634,6 @@ bool IsMovingSingleAxis(const std::vector<size_t>& permutations, size_t& from, s
 
   return single_axis_moved;
 }
-
-}  // namespace
 
 bool IsTransposeReshape(const std::vector<size_t>& perm, const std::vector<int64_t>& input_dims) {
   // As long as the dims with values > 1 stay in the same order, it's a reshape.

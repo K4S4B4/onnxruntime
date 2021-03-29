@@ -18,7 +18,6 @@
 #endif
 
 #include "core/framework/data_types_internal.h"
-#include "core/framework/element_type_lists.h"
 #include "core/framework/utils.h"
 #include "core/framework/tensor.h"
 #include "core/framework/tensor_shape.h"
@@ -28,9 +27,9 @@
 namespace onnxruntime {
 
 namespace op_kernel_type_control {
-ORT_SPECIFY_OP_KERNEL_ARG_DEFAULT_TYPE_LIST_ALL_OPSETS(
+ORT_SPECIFY_OP_KERNEL_ARG_DEFAULT_TYPES_ALL_OPSETS(
     kCpuExecutionProvider, kOnnxDomain, ReverseSequence, Input, 0,
-    element_type_lists::All);
+    ORT_OP_KERNEL_TYPE_CTRL_ALL_TENSOR_DATA_TYPES);
 }
 
 using ReverseSequenceDataTypes = ORT_OP_KERNEL_ARG_DEFAULT_TYPE_LIST_ALL_OPSETS(

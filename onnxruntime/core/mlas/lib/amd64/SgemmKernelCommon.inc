@@ -23,6 +23,7 @@ FgemmElementShift       EQU     2
 FgemmElementSize        EQU     (1 SHL FgemmElementShift)
 FgemmElementPtr         EQU     DWORD PTR
 FgemmElementBcst        EQU     DWORD BCST
+FgemmMaskMoveVector     EQU     MlasMaskMoveAvx
 
 ;
 ; Define the typed instructions for single precision.
@@ -40,6 +41,7 @@ vmovapf                 EQU     vmovaps
 vmovsf                  EQU     vmovss
 vmovupf                 EQU     vmovups
 vmulpf                  EQU     vmulps
+vpcmpgtf                EQU     vpcmpgtd
 vxorpf                  EQU     vxorps
 
 INCLUDE FgemmKernelCommon.inc

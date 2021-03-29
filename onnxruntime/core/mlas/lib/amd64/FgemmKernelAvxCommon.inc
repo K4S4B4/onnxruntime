@@ -17,7 +17,7 @@
 ;
 ;--
 
-        EXTERN  MlasMaskMoveTableAvx:NEAR
+        EXTERN  FgemmMaskMoveVector:NEAR
 
 ;
 ; Macro Description:
@@ -319,9 +319,15 @@ ENDIF
         add     rbp,FgemmYmmElementCount    ; correct for over-subtract above
 
 OutputMasked1xNBlock:
-        neg     rbp
-        lea     rcx,MlasMaskMoveTableAvx+8*4
-        vmovdqu ymm0,YMMWORD PTR [rcx+rbp*FgemmElementSize]
+        mov     FgemmKernelFrame.CountN[rsp],rbp
+IF FgemmElementSize EQ 4
+        vbroadcastsf xmm0,FgemmElementPtr FgemmKernelFrame.CountN[rsp]
+ELSE
+        vmovddup xmm0,FgemmElementPtr FgemmKernelFrame.CountN[rsp]
+ENDIF
+        vpcmpgtf xmm1,xmm0,XMMWORD PTR [FgemmMaskMoveVector+16]
+        vpcmpgtf xmm0,xmm0,XMMWORD PTR [FgemmMaskMoveVector]
+        vinsertf128 ymm0,ymm0,xmm1,1
         test    r15b,r15b                   ; ZeroMode?
         jnz     StoreMasked1xNBlock
         EmitIfCountGE RowCount, 1, <vmaskmovpf ymm8,ymm0,YMMWORD PTR [r8]>

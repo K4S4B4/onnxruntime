@@ -42,7 +42,8 @@ Return Value:
 
 --*/
 
-        FUNCTION_ENTRY MlasReduceMaximumF32KernelAvx
+        .globl  C_UNDERSCORE(MlasReduceMaximumF32KernelAvx)
+C_UNDERSCORE(MlasReduceMaximumF32KernelAvx):
 
         vbroadcastss ymm0,DWORD PTR C_UNDERSCORE(MlasMinimumF32Value)[rip]
         test    rsi,rsi
@@ -117,7 +118,8 @@ Return Value:
 
 --*/
 
-        FUNCTION_ENTRY MlasComputeSoftmaxOutputF32KernelAvx
+        .globl  C_UNDERSCORE(MlasComputeSoftmaxOutputF32KernelAvx)
+C_UNDERSCORE(MlasComputeSoftmaxOutputF32KernelAvx):
 
         vbroadcastss ymm4,DWORD PTR [rdx]       # broadcast scale value
         cmp     rsi,32
@@ -185,7 +187,8 @@ Return Value:
 
 --*/
 
-        FUNCTION_ENTRY MlasComputeLogSoftmaxOutputF32KernelAvx
+        .globl  C_UNDERSCORE(MlasComputeLogSoftmaxOutputF32KernelAvx)
+C_UNDERSCORE(MlasComputeLogSoftmaxOutputF32KernelAvx):
 
         vbroadcastss ymm4,DWORD PTR [rcx]       # broadcast negative minimum value
         vbroadcastss ymm5,DWORD PTR [rcx+4]     # broadcast log(SumExp)

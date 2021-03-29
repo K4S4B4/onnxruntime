@@ -316,9 +316,15 @@ Implicit Arguments:
         add     r9,.LFgemmYmmElementCount   # correct for over-subtract above
 
 .LOutputMasked1xNBlock\@:
-        neg     r9
-        lea     rdi,C_UNDERSCORE(MlasMaskMoveTableAvx)[rip+8*4]
-        vmovdqu ymm0,YMMWORD PTR [rdi+r9*.LFgemmElementSize]
+        vmovd   xmm0,r9d
+.if .LFgemmElementSize == 4
+        vshufps xmm0,xmm0,xmm0,0
+.else
+        vmovddup xmm0,xmm0
+.endif
+        vpcmpgtf xmm1,xmm0,XMMWORD PTR .LFgemmMaskMoveVector[rip+16]
+        vpcmpgtf xmm0,xmm0,XMMWORD PTR .LFgemmMaskMoveVector[rip]
+        vinsertf128 ymm0,ymm0,xmm1,1
         test    r15b,r15b                   # ZeroMode?
         jnz     .LStoreMasked1xNBlock\@
         EmitIfCountGE \RowCount\(), 1, "vmaskmovpf ymm8,ymm0,YMMWORD PTR [rdx]"
@@ -396,7 +402,8 @@ Return Value:
 
 --*/
 
-        FUNCTION_ENTRY \FunctionName\()
+        .globl  \FunctionName\()
+\FunctionName\():
 
         push    rbp
         push    rbx

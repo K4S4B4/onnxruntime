@@ -22,7 +22,6 @@
 #include "test_allocator.h"
 #include "test_fixture.h"
 #include "utils.h"
-#include "custom_op_utils.h"
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -88,17 +87,14 @@ static void TestInference(Ort::Env& env, const std::basic_string<ORTCHAR_T>& mod
                           OrtCustomOpDomain* custom_op_domain_ptr,
                           const char* custom_op_library_filename,
                           void** library_handle = nullptr,
-                          bool test_session_creation_only = false,
-                          void* cuda_compute_stream = nullptr) {
+                          bool test_session_creation_only = false) {
   Ort::SessionOptions session_options;
 
   if (provider_type == 1) {
 #ifdef USE_CUDA
+    Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CUDA(session_options, 0));
     std::cout << "Running simple inference with cuda provider" << std::endl;
-    auto cuda_options = CreateDefaultOrtCudaProviderOptionsWithCustomStream(cuda_compute_stream);
-    session_options.AppendExecutionProvider_CUDA(cuda_options);
 #else
-    ORT_UNUSED_PARAMETER(cuda_compute_stream);
     return;
 #endif
   } else if (provider_type == 2) {
@@ -245,11 +241,9 @@ TEST(CApiTest, custom_op_handler) {
   std::vector<float> expected_values_y = {2.0f, 4.0f, 6.0f, 8.0f, 10.0f, 12.0f};
 
 #ifdef USE_CUDA
-  cudaStream_t compute_stream = nullptr;
-  cudaStreamCreateWithFlags(&compute_stream, cudaStreamNonBlocking);
-  MyCustomOp custom_op{onnxruntime::kCudaExecutionProvider, compute_stream};
+  MyCustomOp custom_op{onnxruntime::kCudaExecutionProvider};
 #else
-  MyCustomOp custom_op{onnxruntime::kCpuExecutionProvider, nullptr};
+  MyCustomOp custom_op{onnxruntime::kCpuExecutionProvider};
 #endif
 
   Ort::CustomOpDomain custom_op_domain("");
@@ -257,13 +251,110 @@ TEST(CApiTest, custom_op_handler) {
 
 #ifdef USE_CUDA
   TestInference<float>(*ort_env, CUSTOM_OP_MODEL_URI, inputs, "Y", expected_dims_y, expected_values_y, 1,
-                       custom_op_domain, nullptr, nullptr, false, compute_stream);
-  cudaStreamDestroy(compute_stream);
+                       custom_op_domain, nullptr, nullptr);
 #else
   TestInference<float>(*ort_env, CUSTOM_OP_MODEL_URI, inputs, "Y", expected_dims_y, expected_values_y, 0,
                        custom_op_domain, nullptr);
 #endif
 }
+
+template <typename T>
+void cuda_slice(const T*, int64_t, int64_t, T*);
+
+template <typename T>
+void custom_slice(const T* X, int64_t from, int64_t to, T* Y) {
+#ifdef USE_CUDA
+  cuda_slice(X, from, to, Y);
+#else
+  for (auto i = from; i < to; i++) {
+    Y[i - from] = X[i];
+  }
+#endif
+}
+
+//Slice array of floats or doubles between [from, to) and save to output
+struct SliceCustomOpKernel {
+  SliceCustomOpKernel(Ort::CustomOpApi ort, const OrtKernelInfo* /*info*/) : ort_(ort) {
+  }
+
+  void Compute(OrtKernelContext* context) {
+    // Setup inputs and outputs
+    const OrtValue* input_X = ort_.KernelContext_GetInput(context, 0);
+    const OrtValue* input_from = ort_.KernelContext_GetInput(context, 1);
+    const OrtValue* input_to = ort_.KernelContext_GetInput(context, 2);
+    OrtTensorTypeAndShapeInfo* input_X_info = ort_.GetTensorTypeAndShape(input_X);
+    ONNXTensorElementDataType input_X_type = ort_.GetTensorElementType(input_X_info);
+    ort_.ReleaseTensorTypeAndShapeInfo(input_X_info);
+#if USE_CUDA
+    int64_t slice_from = 0;
+    int64_t slice_to = 0;
+    cudaMemcpy(&slice_from, ort_.GetTensorData<int64_t>(input_from), sizeof(int64_t), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&slice_to, ort_.GetTensorData<int64_t>(input_to), sizeof(int64_t), cudaMemcpyDeviceToHost);
+#else
+    int64_t slice_from = *ort_.GetTensorData<int64_t>(input_from);
+    int64_t slice_to = *ort_.GetTensorData<int64_t>(input_to);
+#endif
+    std::vector<int64_t> output_dims = {slice_to - slice_from};
+    OrtValue* output = ort_.KernelContext_GetOutput(context, 0, output_dims.data(), output_dims.size());
+    // do slice
+    switch (input_X_type) {
+      case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT:
+        custom_slice(ort_.GetTensorData<float>(input_X), slice_from, slice_to,
+                     ort_.GetTensorMutableData<float>(output));
+        break;
+      case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE:
+        custom_slice(ort_.GetTensorData<double>(input_X), slice_from, slice_to,
+                     ort_.GetTensorMutableData<double>(output));
+        break;
+      default:
+        ORT_THROW("Unsupported input type: ", input_X_type);
+    }
+  }  // Compute
+
+ private:
+  Ort::CustomOpApi ort_;
+};
+
+struct SliceCustomOp : Ort::CustomOpBase<SliceCustomOp, SliceCustomOpKernel> {
+  explicit SliceCustomOp(const char* provider) : provider_(provider) {}
+  void* CreateKernel(Ort::CustomOpApi api, const OrtKernelInfo* info) const {
+    return new SliceCustomOpKernel(api, info);
+  };
+
+  const char* GetName() const { return "Slice"; };
+  const char* GetExecutionProviderType() const { return provider_; };
+
+  size_t GetInputTypeCount() const { return 3; };
+  ONNXTensorElementDataType GetInputType(size_t index) const {
+    switch (index) {
+      case 0:
+        return ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED;  // input array of float or double
+        break;
+      case 1:
+        return ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64;  // slice from
+        break;
+      case 2:
+        return ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64;  // slice to
+        break;
+      default:
+        ORT_THROW("Invalid input index: ", index);
+    }
+  };
+
+  size_t GetOutputTypeCount() const { return 1; };
+  ONNXTensorElementDataType GetOutputType(size_t index) const {
+    switch (index) {
+      case 0:
+        return ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED;
+        break;
+      default:
+        ORT_THROW("Invalid output index: ", index);
+    }
+  }
+
+ private:
+  const char* provider_;
+};
 
 //test custom op which accepts float and double as inputs
 TEST(CApiTest, varied_input_custom_op_handler) {
@@ -278,11 +369,9 @@ TEST(CApiTest, varied_input_custom_op_handler) {
   std::vector<float> expected_values_z = {10.0f};
 
 #ifdef USE_CUDA
-  cudaStream_t compute_stream = nullptr;
-  cudaStreamCreateWithFlags(&compute_stream, cudaStreamNonBlocking);
-  SliceCustomOp slice_custom_op{onnxruntime::kCudaExecutionProvider, compute_stream};
+  SliceCustomOp slice_custom_op{onnxruntime::kCudaExecutionProvider};
 #else
-  SliceCustomOp slice_custom_op{onnxruntime::kCpuExecutionProvider, nullptr};
+  SliceCustomOp slice_custom_op{onnxruntime::kCpuExecutionProvider};
 #endif
 
   Ort::CustomOpDomain custom_op_domain("abc");
@@ -290,8 +379,7 @@ TEST(CApiTest, varied_input_custom_op_handler) {
 
 #ifdef USE_CUDA
   TestInference<float>(*ort_env, VARIED_INPUT_CUSTOM_OP_MODEL_URI, inputs, "Z",
-                       expected_dims_z, expected_values_z, 1, custom_op_domain, nullptr, nullptr, false, compute_stream);
-  cudaStreamDestroy(compute_stream);
+                       expected_dims_z, expected_values_z, 1, custom_op_domain, nullptr, nullptr);
 #else
   TestInference<float>(*ort_env, VARIED_INPUT_CUSTOM_OP_MODEL_URI, inputs, "Z",
                        expected_dims_z, expected_values_z, 0, custom_op_domain, nullptr);
@@ -300,11 +388,9 @@ TEST(CApiTest, varied_input_custom_op_handler) {
 
 TEST(CApiTest, multiple_varied_input_custom_op_handler) {
 #ifdef USE_CUDA
-  cudaStream_t compute_stream = nullptr;
-  cudaStreamCreateWithFlags(&compute_stream, cudaStreamNonBlocking);
-  MyCustomOpMultipleDynamicInputs custom_op{onnxruntime::kCudaExecutionProvider, compute_stream};
+  MyCustomOpMultipleDynamicInputs custom_op{onnxruntime::kCudaExecutionProvider};
 #else
-  MyCustomOpMultipleDynamicInputs custom_op{onnxruntime::kCpuExecutionProvider, nullptr};
+  MyCustomOpMultipleDynamicInputs custom_op{onnxruntime::kCpuExecutionProvider};
 #endif
 
   Ort::CustomOpDomain custom_op_domain("");
@@ -313,8 +399,7 @@ TEST(CApiTest, multiple_varied_input_custom_op_handler) {
   Ort::SessionOptions session_options;
 
 #ifdef USE_CUDA
-  auto cuda_options = CreateDefaultOrtCudaProviderOptionsWithCustomStream(compute_stream);
-  session_options.AppendExecutionProvider_CUDA(cuda_options);
+  Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CUDA(session_options, 0));
 #endif
 
   session_options.Add(custom_op_domain);
@@ -359,10 +444,6 @@ TEST(CApiTest, multiple_varied_input_custom_op_handler) {
   for (size_t i = 0; i != total_len; ++i) {
     ASSERT_EQ(values_y[i], f[i]);
   }
-
-#ifdef USE_CUDA
-  cudaStreamDestroy(compute_stream);
-#endif
 }
 
 TEST(CApiTest, optional_input_output_custom_op_handler) {
@@ -508,9 +589,8 @@ TEST(CApiTest, RegisterCustomOpForCPUAndCUDA) {
   std::vector<int64_t> expected_dims_y = {3, 2};
   std::vector<float> expected_values_y = {2.0f, 4.0f, 6.0f, 8.0f, 10.0f, 12.0f};
 
-  MyCustomOp custom_op_cpu{onnxruntime::kCpuExecutionProvider, nullptr};
-  // We are going to test session creation only - hence it is not a problem to use the default stream as the compute stream for the custom op
-  MyCustomOp custom_op_cuda{onnxruntime::kCudaExecutionProvider, nullptr};
+  MyCustomOp custom_op_cpu{onnxruntime::kCpuExecutionProvider};
+  MyCustomOp custom_op_cuda{onnxruntime::kCudaExecutionProvider};
   Ort::CustomOpDomain custom_op_domain("");
   custom_op_domain.Add(&custom_op_cpu);
   custom_op_domain.Add(&custom_op_cuda);

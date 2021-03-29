@@ -29,6 +29,6 @@ Abstract:
 // Generate the GEMM kernel.
 //
 
-FgemmKernelFma3Function MlasGemmFloatKernelFma3
+FgemmKernelFma3Function C_UNDERSCORE(MlasGemmFloatKernelFma3)
 
         .end

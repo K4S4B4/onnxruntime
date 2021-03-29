@@ -1,8 +1,6 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-#include <cub/cub.cuh>
-
 #include "core/providers/cuda/cu_inc/common.cuh"
 #include "core/providers/cuda/cuda_common.h"
 
@@ -12,6 +10,7 @@
 #endif
 
 #include "core/providers/cuda/tensor/compress_impl.h"
+#include <cub/cub.cuh>
 
 namespace onnxruntime {
 namespace cuda {

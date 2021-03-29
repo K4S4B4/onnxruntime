@@ -47,7 +47,8 @@ Return Value:
 
 --*/
 
-        FUNCTION_ENTRY MlasSgemmTransposePackB16x4Sse
+        .globl  C_UNDERSCORE(MlasSgemmTransposePackB16x4Sse)
+C_UNDERSCORE(MlasSgemmTransposePackB16x4Sse):
 
         shl     rdx,2                       # convert ldb to bytes
         mov     ecx,4                       # transpose four 4x4 blocks

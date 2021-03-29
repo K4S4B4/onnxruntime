@@ -56,7 +56,8 @@ Return Value:
 
 --*/
 
-        FUNCTION_ENTRY MlasSgemmKernelM1Avx
+        .globl  C_UNDERSCORE(MlasSgemmKernelM1Avx)
+C_UNDERSCORE(MlasSgemmKernelM1Avx):
 
         push    rbx
         shl     r9,2                        # convert ldb to bytes

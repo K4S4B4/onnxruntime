@@ -13,7 +13,7 @@ variables:
 name: $(Date:yyyyMMdd)$(Rev:.r)
 jobs:
 - job: Linux_py_GPU_Build_Test_Release_Dockerfile
-  timeoutInMinutes: 110
+  timeoutInMinutes: 90
   workspace:
     clean: all
   pool: Onnxruntime-Linux-GPU

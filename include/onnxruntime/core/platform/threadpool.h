@@ -380,10 +380,6 @@ class ThreadPool {
 
   ORT_DISALLOW_COPY_AND_ASSIGNMENT(ThreadPool);
 
-  // StartProfiling and StopProfiling are not to be consumed as public-facing API
-  static void StartProfiling(concurrency::ThreadPool* tp);
-  static std::string StopProfiling(concurrency::ThreadPool* tp);
-
  private:
   friend class LoopCounter;
 
@@ -400,7 +396,7 @@ class ThreadPool {
   // then the function will run directly in the caller.  The fork-join
   // synchronization is handled in the thread pool, and so any state captured
   // by fn() is safe from concurrent access once RunWithHelp returns.
-  void RunInParallel(std::function<void(unsigned idx)> fn, unsigned n, std::ptrdiff_t block_size);
+  void RunInParallel(std::function<void(unsigned idx)> fn, unsigned n);
 
   // Divides the work represented by the range [0, total) into k shards.
   // Calls fn(i*block_size, (i+1)*block_size) from the ith shard (0 <= i < k).
@@ -428,10 +424,6 @@ class ThreadPool {
   void SimpleParallelFor(std::ptrdiff_t total, const std::function<void(std::ptrdiff_t)>& fn);
 
   void Schedule(std::function<void()> fn);
-
-  void StartProfiling();
-
-  std::string StopProfiling();
 
   ThreadOptions thread_options_;
 

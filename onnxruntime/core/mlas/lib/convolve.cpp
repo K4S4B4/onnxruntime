@@ -39,7 +39,7 @@ struct MLAS_CONV_WORK_BLOCK {
         size_t StartN;
         size_t CountN;
     } Segments[MLAS_MAXIMUM_THREAD_COUNT];
-    ptrdiff_t TargetThreadCount;
+    int32_t TargetThreadCount;
 };
 
 void
@@ -609,7 +609,7 @@ Return Value:
 void
 MlasConvOperationThreaded(
     void* Context,
-    ptrdiff_t Index
+    int32_t Index
     )
 /*++
 
@@ -645,7 +645,7 @@ Return Value:
 void
 MlasConvGemmDirectThreaded(
     void* Context,
-    ptrdiff_t Index
+    int32_t Index
     )
 /*++
 
@@ -677,13 +677,21 @@ Return Value:
     const size_t GroupCount = Parameters->GroupCount;
     const size_t BatchGroupCount = Parameters->BatchCount * GroupCount;
 
+    const size_t TargetThreadCount = WorkBlock->TargetThreadCount;
+
+    const size_t BatchGroupCountPerThread = BatchGroupCount / TargetThreadCount;
+    const size_t BatchGroupCountExtra = BatchGroupCount % TargetThreadCount;
+
     size_t BatchGroupStart;
-    size_t BatchGroupRemaining;
+    size_t BatchGroupEnd;
 
-    MlasPartitionWork(Index, WorkBlock->TargetThreadCount, BatchGroupCount,
-        &BatchGroupStart, &BatchGroupRemaining);
-
-    size_t BatchGroupEnd = BatchGroupStart + BatchGroupRemaining;
+    if (uint32_t(Index) < BatchGroupCountExtra) {
+        BatchGroupStart = (BatchGroupCountPerThread + 1) * Index;
+        BatchGroupEnd = BatchGroupStart + BatchGroupCountPerThread + 1;
+    } else {
+        BatchGroupStart = BatchGroupCountPerThread * Index + BatchGroupCountExtra;
+        BatchGroupEnd = BatchGroupStart + BatchGroupCountPerThread;
+    }
 
     //
     // Iterate over the batch and groups allocated to this thread.
@@ -881,10 +889,10 @@ Return Value:
 
         const size_t BatchGroupCount = BatchCount * GroupCount;
 
-        ptrdiff_t TargetThreadCount = MlasGetMaximumThreadCount(ThreadPool);
+        int32_t TargetThreadCount = MlasGetMaximumThreadCount(ThreadPool);
 
         if (size_t(TargetThreadCount) >= BatchGroupCount) {
-            TargetThreadCount = ptrdiff_t(BatchGroupCount);
+            TargetThreadCount = int32_t(BatchGroupCount);
         }
 
         MLAS_CONV_WORK_BLOCK WorkBlock;
@@ -1205,16 +1213,16 @@ Return Value:
         // threaded path.
         //
 
-        ptrdiff_t TargetThreadCount;
+        int32_t TargetThreadCount;
         double Complexity = double(FilterCount) * double(OutputSize) * double(K);
 
         if (Complexity < double(MLAS_SGEMM_THREAD_COMPLEXITY * MLAS_MAXIMUM_THREAD_COUNT)) {
-            TargetThreadCount = ptrdiff_t(Complexity / double(MLAS_SGEMM_THREAD_COMPLEXITY)) + 1;
+            TargetThreadCount = int32_t(Complexity / double(MLAS_SGEMM_THREAD_COMPLEXITY)) + 1;
         } else {
             TargetThreadCount = MLAS_MAXIMUM_THREAD_COUNT;
         }
 
-        ptrdiff_t MaximumThreadCount = MlasGetMaximumThreadCount(ThreadPool);
+        int32_t MaximumThreadCount = MlasGetMaximumThreadCount(ThreadPool);
 
         if (TargetThreadCount >= MaximumThreadCount) {
             TargetThreadCount = MaximumThreadCount;

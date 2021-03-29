@@ -1,6 +1,6 @@
 jobs:
 - job: 'build'
-  pool: 'onnxruntime-tensorrt-winbuild'
+  pool: 'Win-TRT'
   variables:
     OrtPackageId: 'Microsoft.ML.OnnxRuntime'
     MsbuildArguments: '-detailedsummary -maxcpucount -consoleloggerparameters:PerformanceSummary'

@@ -71,10 +71,6 @@ class GradientBuilderBase {
     return name + "_grad";
   }
 
-  static std::string ExternalOutputName(const std::string& name) {
-    return name + "_external";
-  }
-
  protected:
   virtual GradientDef GetGradientDefsImpl() const = 0;
 

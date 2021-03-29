@@ -23,6 +23,7 @@ FgemmElementShift       EQU     3
 FgemmElementSize        EQU     (1 SHL FgemmElementShift)
 FgemmElementPtr         EQU     QWORD PTR
 FgemmElementBcst        EQU     QWORD BCST
+FgemmMaskMoveVector     EQU     MlasMaskMoveAvx64
 
 ;
 ; Define the typed instructions for double precision.
@@ -40,6 +41,7 @@ vmovapf                 EQU     vmovapd
 vmovsf                  EQU     vmovsd
 vmovupf                 EQU     vmovupd
 vmulpf                  EQU     vmulpd
+vpcmpgtf                EQU     vpcmpgtq
 vxorpf                  EQU     vxorpd
 
 INCLUDE FgemmKernelCommon.inc

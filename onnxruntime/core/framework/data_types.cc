@@ -2,14 +2,10 @@
 // Licensed under the MIT License.
 
 #include "core/framework/data_types.h"
-
-#include "boost/mp11.hpp"
-
-#include "core/framework/data_types_internal.h"
-#include "core/framework/element_type_lists.h"
-#include "core/framework/sparse_tensor.h"
 #include "core/framework/tensor.h"
 #include "core/framework/TensorSeq.h"
+#include "core/framework/sparse_tensor.h"
+#include "core/framework/data_types_internal.h"
 #include "core/graph/onnx_protobuf.h"
 #include "core/util/math.h"
 
@@ -882,77 +878,113 @@ ORT_REGISTER_PRIM_TYPE(uint64_t);
 ORT_REGISTER_PRIM_TYPE(MLFloat16);
 ORT_REGISTER_PRIM_TYPE(BFloat16);
 
-namespace {
-template <typename... ElementTypes>
-struct GetTensorTypesImpl {
-  std::vector<MLDataType> operator()() const {
-    return {DataTypeImpl::GetTensorType<ElementTypes>()...};
-  }
-};
-
-template <typename L>
-std::vector<MLDataType> GetTensorTypesFromTypeList() {
-  return boost::mp11::mp_apply<GetTensorTypesImpl, L>{}();
-}
-
-template <typename... ElementTypes>
-struct GetSequenceTensorTypesImpl {
-  std::vector<MLDataType> operator()() const {
-    return {DataTypeImpl::GetSequenceTensorType<ElementTypes>()...};
-  }
-};
-
-template <typename L>
-std::vector<MLDataType> GetSequenceTensorTypesFromTypeList() {
-  return boost::mp11::mp_apply<GetSequenceTensorTypesImpl, L>{}();
-}
-}  // namespace
-
 const std::vector<MLDataType>& DataTypeImpl::AllFixedSizeTensorExceptHalfTypes() {
   static std::vector<MLDataType> all_fixed_size_tensor_types =
-      GetTensorTypesFromTypeList<element_type_lists::AllFixedSizeExceptHalf>();
+      {DataTypeImpl::GetTensorType<float>(),
+       DataTypeImpl::GetTensorType<double>(),
+       DataTypeImpl::GetTensorType<int64_t>(),
+       DataTypeImpl::GetTensorType<uint64_t>(),
+       DataTypeImpl::GetTensorType<int32_t>(),
+       DataTypeImpl::GetTensorType<uint32_t>(),
+       DataTypeImpl::GetTensorType<int16_t>(),
+       DataTypeImpl::GetTensorType<uint16_t>(),
+       DataTypeImpl::GetTensorType<int8_t>(),
+       DataTypeImpl::GetTensorType<uint8_t>(),
+       DataTypeImpl::GetTensorType<bool>()};
+
   return all_fixed_size_tensor_types;
 }
 
 const std::vector<MLDataType>& DataTypeImpl::AllIEEEFloatTensorExceptHalfTypes() {
   static std::vector<MLDataType> all_IEEE_float_tensor_except_half_types =
-      GetTensorTypesFromTypeList<element_type_lists::AllIeeeFloatExceptHalf>();
+      {DataTypeImpl::GetTensorType<float>(),
+       DataTypeImpl::GetTensorType<double>()};
+
   return all_IEEE_float_tensor_except_half_types;
 }
 
 const std::vector<MLDataType>& DataTypeImpl::AllIEEEFloatTensorTypes() {
   static std::vector<MLDataType> all_IEEE_float_tensor_types =
-      GetTensorTypesFromTypeList<element_type_lists::AllIeeeFloat>();
+      {DataTypeImpl::GetTensorType<float>(),
+       DataTypeImpl::GetTensorType<double>(),
+       DataTypeImpl::GetTensorType<MLFloat16>()};
+
   return all_IEEE_float_tensor_types;
 }
 
 const std::vector<MLDataType>& DataTypeImpl::AllFixedSizeTensorTypes() {
   static std::vector<MLDataType> all_fixed_size_tensor_types =
-      GetTensorTypesFromTypeList<element_type_lists::AllFixedSize>();
+      {DataTypeImpl::GetTensorType<float>(),
+       DataTypeImpl::GetTensorType<double>(),
+       DataTypeImpl::GetTensorType<int64_t>(),
+       DataTypeImpl::GetTensorType<uint64_t>(),
+       DataTypeImpl::GetTensorType<int32_t>(),
+       DataTypeImpl::GetTensorType<uint32_t>(),
+       DataTypeImpl::GetTensorType<int16_t>(),
+       DataTypeImpl::GetTensorType<uint16_t>(),
+       DataTypeImpl::GetTensorType<int8_t>(),
+       DataTypeImpl::GetTensorType<uint8_t>(),
+       DataTypeImpl::GetTensorType<MLFloat16>(),
+       DataTypeImpl::GetTensorType<BFloat16>(),
+       DataTypeImpl::GetTensorType<bool>()};
+
   return all_fixed_size_tensor_types;
 }
 
 const std::vector<MLDataType>& DataTypeImpl::AllTensorTypes() {
   static std::vector<MLDataType> all_tensor_types =
-      GetTensorTypesFromTypeList<element_type_lists::All>();
+      []() {
+        auto temp = AllFixedSizeTensorTypes();
+        temp.push_back(DataTypeImpl::GetTensorType<std::string>());
+        return temp;
+      }();
   return all_tensor_types;
 }
 
 const std::vector<MLDataType>& DataTypeImpl::AllFixedSizeSequenceTensorTypes() {
   static std::vector<MLDataType> all_fixed_size_sequence_tensor_types =
-      GetSequenceTensorTypesFromTypeList<element_type_lists::AllFixedSize>();
+      {DataTypeImpl::GetSequenceTensorType<float>(),
+       DataTypeImpl::GetSequenceTensorType<double>(),
+       DataTypeImpl::GetSequenceTensorType<int64_t>(),
+       DataTypeImpl::GetSequenceTensorType<uint64_t>(),
+       DataTypeImpl::GetSequenceTensorType<int32_t>(),
+       DataTypeImpl::GetSequenceTensorType<uint32_t>(),
+       DataTypeImpl::GetSequenceTensorType<int16_t>(),
+       DataTypeImpl::GetSequenceTensorType<uint16_t>(),
+       DataTypeImpl::GetSequenceTensorType<int8_t>(),
+       DataTypeImpl::GetSequenceTensorType<uint8_t>(),
+       DataTypeImpl::GetSequenceTensorType<MLFloat16>(),
+       DataTypeImpl::GetSequenceTensorType<BFloat16>(),
+       DataTypeImpl::GetSequenceTensorType<bool>()};
+
   return all_fixed_size_sequence_tensor_types;
 }
 
 const std::vector<MLDataType>& DataTypeImpl::AllSequenceTensorTypes() {
   static std::vector<MLDataType> all_sequence_tensor_types =
-      GetSequenceTensorTypesFromTypeList<element_type_lists::All>();
+      []() {
+        auto temp = AllFixedSizeSequenceTensorTypes();
+        temp.push_back(DataTypeImpl::GetSequenceTensorType<std::string>());
+        return temp;
+      }();
   return all_sequence_tensor_types;
 }
 
 const std::vector<MLDataType>& DataTypeImpl::AllNumericTensorTypes() {
   static std::vector<MLDataType> all_numeric_size_tensor_types =
-      GetTensorTypesFromTypeList<element_type_lists::AllNumeric>();
+      {DataTypeImpl::GetTensorType<float>(),
+       DataTypeImpl::GetTensorType<double>(),
+       DataTypeImpl::GetTensorType<int64_t>(),
+       DataTypeImpl::GetTensorType<uint64_t>(),
+       DataTypeImpl::GetTensorType<int32_t>(),
+       DataTypeImpl::GetTensorType<uint32_t>(),
+       DataTypeImpl::GetTensorType<int16_t>(),
+       DataTypeImpl::GetTensorType<uint16_t>(),
+       DataTypeImpl::GetTensorType<int8_t>(),
+       DataTypeImpl::GetTensorType<uint8_t>(),
+       DataTypeImpl::GetTensorType<MLFloat16>(),
+       DataTypeImpl::GetTensorType<BFloat16>()};
+
   return all_numeric_size_tensor_types;
 }
 
